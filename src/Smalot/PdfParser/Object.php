@@ -40,6 +40,9 @@ use Smalot\PdfParser\XObject\Image;
  */
 class Object
 {
+    
+    var $collected_text;
+    
     const TYPE = 't';
 
     const OPERATOR = 'o';
@@ -236,7 +239,7 @@ class Object
      */
     public function getText(Page $page = null)
     {
-        $text                = '';
+        $this->collected_text  = FALSE;
         $sections            = $this->getSectionsText($this->content);
         $current_font        = new Font($this->document);
         $current_position_td = array('x' => false, 'y' => false);
@@ -258,19 +261,21 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
+                        $text = '';
                         if ((floatval($x) <= 0) ||
                             ($current_position_td['y'] !== false && floatval($y) < floatval($current_position_td['y']))
                         ) {
                             // vertical offset
-                            $text .= "\n";
+                            $text = "\n";
                         } elseif ($current_position_td['x'] !== false && floatval($x) > floatval(
                                 $current_position_td['x']
                             )
                         ) {
                             // horizontal offset
-                            $text .= ' ';
+                            $text = ' ';
                         }
                         $current_position_td = array('x' => $x, 'y' => $y);
+                        $this->addToText($text, 'td', $current_position_td,'Td');
                         break;
 
                     // move text current point and set leading
@@ -278,11 +283,15 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
+                        $text = '';
                         if (floatval($y) < 0) {
-                            $text .= "\n";
+                            $text = "\n";
                         } elseif (floatval($x) <= 0) {
-                            $text .= ' ';
+                            $text = ' ';
                         }
+                      
+                        $this->addToText($text, 'TD', array('x' => $x, 'y' => $y),'TD');
+                        
                         break;
 
                     case 'Tf':
@@ -296,6 +305,7 @@ class Object
                         $command[self::COMMAND] = array($command);
                     case 'TJ':
                         // Skip if not previously defined, should never happened.
+                        $text = '';
                         if (is_null($current_font)) {
                             // Fallback
                             // TODO : Improve
@@ -305,24 +315,29 @@ class Object
 
                         $sub_text = $current_font->decodeText($command[self::COMMAND]);
                         $text .= $sub_text;
+                        $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);
                         break;
 
                     // set leading
                     case 'TL':
-                        $text .= ' ';
+                        $text = ' ';
+                        $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);
                         break;
 
                     case 'Tm':
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
+                        $text = FALSE;
                         if ($current_position_tm['y'] !== false) {
                             $delta = abs(floatval($y) - floatval($current_position_tm['y']));
                             if ($delta > 10) {
-                                $text .= "\n";
+                                $text = "\n";
+                                $this->addToText($text, 'tm', array('x' => $x, 'y' => $y),$command[self::OPERATOR]);
                             }
                         }
                         $current_position_tm = array('x' => $x, 'y' => $y);
+
                         break;
 
                     // set super/subscripting text rise
@@ -335,12 +350,14 @@ class Object
 
                     // set horizontal scaling
                     case 'Tz':
-                        $text .= "\n";
+                        $text = "\n";
+                        $this->addToText($text, 'tm', $current_position_td,$command[self::OPERATOR]);
                         break;
 
                     // move to start of next line
                     case 'T*':
-                        $text .= "\n";
+                        $text = "\n";
+                        $this->addToText($text, 'tm', $current_position_td,$command[self::OPERATOR]);
                         break;
 
                     case 'Da':
@@ -351,7 +368,8 @@ class Object
                             $args = preg_split('/\s/s', $command[self::COMMAND]);
                             $id   = trim(array_pop($args), '/ ');
                             if ($xobject = $page->getXObject($id)) {
-                                $text .= $xobject->getText($page);
+                                $text = $xobject->getText($page);
+                                $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);                        
                             }
                         }
                         break;
@@ -394,10 +412,124 @@ class Object
                 }
             }
         }
+        
+        return $this->implodeCollectedText();
 
-        return $text . ' ';
+
+    }
+    
+    /**
+     * colect text chunks with cordinates in array
+     * @param string $text  text chunk
+     * @param string $position_type tm or td. Currently do not use
+     * @param array $current_position array('x'=>111,'y'=>222)
+     * @param string $command. Currently do not use
+     * @return boolean
+     */
+    public function addToText($text, $position_type, $current_position, $command) {
+
+        //ignore new line 
+        if ($text == "\n") {
+            return TRUE;
+        }
+
+        if (!$this->collected_text) {
+            //init
+            $this->collected_text = array();
+        } else {
+
+            //if next text chunk in some row add to last collected text
+            end($this->collected_text);
+            $y_prev = key($this->collected_text);
+            $delta = abs($current_position['y'] - floatval($y_prev));
+            if ($delta < 11) {
+                $this->collected_text[$y_prev]['text'] .= $text;
+                return TRUE;
+            }
+        }
+        
+        $y = floatval($current_position['y']);
+        $x = floatval($current_position['x']);
+        
+        //if exist element with actual y value, adjust litle up
+        while (isset($this->collected_text[$y])) {
+            $y += 0.001;
+        }
+        
+        //store chunk in array
+        $this->collected_text[$y] = array('text' => $text, 'x' => $x);
+        return TRUE;
     }
 
+    /**
+     * process collected 
+     * @return string
+     */
+    public function implodeCollectedText(){
+        //sort by Y descending
+        krsort($this->collected_text, SORT_NUMERIC);
+
+        //init avlues for loop
+        $y_max = FALSE;
+        $row = array();
+        $out_text = '';
+
+        foreach ($this->collected_text as $y => $xtext) {
+            unset($this->collected_text[$y]);
+            $y = floatval($y);
+            if (!$y_max) {
+                /**
+                 * init
+                 */
+                $y_max = $y;
+                $row[] = $xtext;
+                continue;
+            }
+            if ($y_max - 10 < $y) {
+                /**
+                 * same row
+                 */
+                $row[] = $xtext;
+                continue;
+            }
+
+            /**
+             * new row
+             */
+            //actual row sort by Y
+            $krow = array();
+            foreach ($row as $xt) {
+                $krow[$xt['x']] = $xt['text'];
+            }
+
+            //actual row output
+            ksort($krow);
+            if (!empty($out_text)) {
+                $out_text .= "\n";
+            }
+            $out_text .= implode('', $krow);
+
+            //init new row
+            $y_max = $y;
+            $row = array();
+            $row[] = $xtext;
+        }
+
+        //actual row sort by Y
+        $krow = array();
+        foreach ($row as $xt) {
+            $krow[$xt['x']] = $xt['text'];
+        }
+
+        //last actual row output
+        ksort($krow);
+        if (!empty($out_text)) {
+            $out_text .= "\r";
+        }
+        $out_text .= implode('', $krow);
+        return $out_text;        
+    }
+    
     /**
      * @param string $text_part
      * @param int    $offset
