@@ -245,12 +245,13 @@ class Object
         $current_position_td = array('x' => false, 'y' => false);
         $current_position_tm = array('x' => false, 'y' => false);
 
-        foreach ($sections as $section) {
-
+        foreach ($sections as $ks => $section) {
+            unset($sections[$ks]);
             $commands = $this->getCommandsText($section);
+            unset($section);
 
-            foreach ($commands as $command) {
-
+            foreach ($commands as $kc => $command) {
+                unset($commands[$kc]);
                 switch ($command[self::OPERATOR]) {
                     // set character spacing
                     case 'Tc':
