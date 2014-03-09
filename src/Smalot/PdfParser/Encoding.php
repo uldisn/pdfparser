@@ -63,51 +63,64 @@ class Encoding extends Object
         $this->differences = array();
         $this->encoding    = null;
 
-        if ($this->has('BaseEncoding')) {
-            // Load reference table charset.
-            $baseEncoding = preg_replace('/[^A-Z0-9]/is', '', $this->get('BaseEncoding')->getContent());
-            $className    = '\\Smalot\\PdfParser\\Encoding\\' . $baseEncoding;
+        if (!$this->has('BaseEncoding')) {
+            return;
+        }
 
-            if (class_exists($className)) {
-                $class = new $className();
-                $this->encoding = $class->getTranslations();
+        // Load reference table charset.
+        $baseEncoding = preg_replace('/[^A-Z0-9]/is', '', $this->get('BaseEncoding')->getContent());
+        $className    = '\\Smalot\\PdfParser\\Encoding\\' . $baseEncoding;
+
+        if (!class_exists($className)) {
+            throw new \Exception('Missing encoding data for: "' . $baseEncoding . '".');
+        }
+
+        /** @var Encoding\EncodingInterface $class */
+        $class = new $className();
+        $this->encoding = $class->getTranslations();
+
+        if (!$this->has('Differences')) {
+            return;
+        }
+
+        // Build table including differences.
+        $differences = $this->get('Differences')->getContent();
+        if (false === $differences) {
+            throw new \Exception("Could not find differences");
+        }
+
+        $code = 0;
+
+        foreach ($differences as $difference) {
+            /** @var ElementNumeric $difference */
+            if ($difference instanceof ElementNumeric) {
+                $code = $difference->getContent();
+                continue;
+            }
+
+            // ElementName
+            if (is_object($difference)) {
+                $this->differences[$code] = $difference->getContent();
             } else {
-                throw new \Exception('Missing encoding data for: "' . $baseEncoding . '".');
+                $this->differences[$code] = $difference;
             }
 
-            // Build table including differences.
-            $differences = $this->get('Differences')->getContent();
-            $code        = 0;
+            // For the next char.
+            $code++;
+        }
 
-            foreach ($differences as $difference) {
-                /** @var ElementNumeric $difference */
-                if ($difference instanceof ElementNumeric) {
-                    $code = $difference->getContent();
-                    continue;
-                }
+        // Build final mapping (custom => standard).
+        $table = array_flip(array_reverse($this->encoding, true));
 
-                // ElementName
-                if (is_object($difference)) {
-                    $this->differences[$code] = $difference->getContent();
-                } else {
-                    $this->differences[$code] = $difference;
-                }
-
-                // For the next char.
-                $code++;
-            }
-
-            // Build final mapping (custom => standard).
-            $table = array_flip(array_reverse($this->encoding, true));
-
-            foreach ($this->differences as $code => $difference) {
-                /** @var string $difference */
-                $this->mapping[$code] = (isset($table[$difference]) ? $table[$difference] : Font::MISSING);
-            }
+        foreach ($this->differences as $code => $difference) {
+            /** @var string $difference */
+            $this->mapping[$code] = (isset($table[$difference]) ? $table[$difference] : Font::MISSING);
         }
     }
 
     /**
+     * @param bool $deep
+     *
      * @return array
      */
     public function getDetails($deep = true)
@@ -123,7 +136,7 @@ class Encoding extends Object
     }
 
     /**
-     * @param int $char
+     * @param int $dec
      *
      * @return int
      */
