@@ -42,6 +42,7 @@ class Object
 {
     
     var $collected_text;
+    var $actual_line;
     
     const TYPE = 't';
 
@@ -239,7 +240,8 @@ class Object
      */
     public function getText(Page $page = null)
     {
-        $this->collected_text  = FALSE;
+        $bDebug = defined('DEBUG_SMALOT_OBJECT') && DEBUG_SMALOT_OBJECT;
+        $collected_text  = FALSE;
         $sections            = $this->getSectionsText($this->content);
         $current_font        = new Font($this->document);
         $current_position_td = array('x' => false, 'y' => false);
@@ -262,21 +264,24 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        $text = '';
+                        if($bDebug) echo 'Td:/x='.$x.'/y='.$y.PHP_EOL;
+                        
                         if ((floatval($x) <= 0) ||
                             ($current_position_td['y'] !== false && floatval($y) < floatval($current_position_td['y']))
                         ) {
                             // vertical offset
-                            $text = "\n";
+                            //$text .= "\n";
+                            $current_position_tm['x'] = 0; 
+                            $current_position_tm['y'] -= 11;
+                            $this->newLine('', $current_position_tm['x'], $current_position_tm['y'],$collected_text);
                         } elseif ($current_position_td['x'] !== false && floatval($x) > floatval(
                                 $current_position_td['x']
                             )
                         ) {
                             // horizontal offset
-                            $text = ' ';
+                            //$text .= ' ';
                         }
                         $current_position_td = array('x' => $x, 'y' => $y);
-                        $this->addToText($text, 'td', $current_position_td,'Td');
                         break;
 
                     // move text current point and set leading
@@ -284,27 +289,39 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        $text = '';
+                        if($bDebug) echo 'TD:/x='.$x.'/y='.$y;
+                        if(empty($collected_text)){
+                            $this->newLine('',$x, $y,$collected_text);
+                            $current_position_tm = array('x' => $x, 'y' => $y);
+                            if($bDebug) echo '|:added new empty collect'.PHP_EOL;
+                        }                        
+
                         if (floatval($y) < 0) {
-                            $text = "\n";
+                            //$text = "\n";
+                            $current_position_tm['y'] += $y;
+                            $current_position_tm['x'] += $x;
+                            $this->newLine('', $current_position_tm['x'], $current_position_tm['y'],$collected_text);
+                            if($bDebug) echo '/fixY='.$current_position_tm['y'].'|:added new empty collect'.PHP_EOL;
                         } elseif (floatval($x) <= 0) {
-                            $text = ' ';
+                            $this->appendToLine(' ',$collected_text);
+                            if($bDebug) echo '|:horizontal offset'.PHP_EOL;
                         }
-                      
-                        $this->addToText($text, 'TD', array('x' => $x, 'y' => $y),'TD');
                         
                         break;
 
                     case 'Tf':
+                        
                         list($id,) = preg_split('/\s/s', $command[self::COMMAND]);
                         $id           = trim($id, '/');
                         $current_font = $page->getFont($id);
+                        if($bDebug) echo 'Tf:fontId='.$id.PHP_EOL;
                         break;
 
                     case "'":
                     case 'Tj':
                         $command[self::COMMAND] = array($command);
                     case 'TJ':
+                        if($bDebug) echo $command[self::OPERATOR];
                         // Skip if not previously defined, should never happened.
                         $text = '';
                         if (is_null($current_font)) {
@@ -315,28 +332,38 @@ class Object
                         }
 
                         $sub_text = $current_font->decodeText($command[self::COMMAND]);
-                        $text .= $sub_text;
-                        $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);
+                        //$this->collected_text[$y_actual]['text'] .= $text . $sub_text;
+                        $this->appendToLine($text . $sub_text,$collected_text);
+                        if($bDebug) echo ':AddText:'.$text . $sub_text.PHP_EOL;
+
                         break;
 
                     // set leading
                     case 'TL':
-                        $text = ' ';
-                        $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);
+                        //$text = ' ';
+                        if($bDebug) echo 'TL:add space';
+                        //$this->collected_text[$y_actual]['text'] .= ' ';
+                        $this->appendToLine(' ',$collected_text);
                         break;
 
                     case 'Tm':
+                        
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        $text = FALSE;
-                        if ($current_position_tm['y'] !== false) {
-                            $delta = abs(floatval($y) - floatval($current_position_tm['y']));
-                            if ($delta > 10) {
-                                $text = "\n";
-                                $this->addToText($text, 'tm', array('x' => $x, 'y' => $y),$command[self::OPERATOR]);
-                            }
-                        }
+                        if($bDebug) echo 'Tm:/x='.$x.'/y='.$y.PHP_EOL;
+//                        $text = FALSE;
+//                        if ($current_position_tm['y'] !== false) {
+//                            $delta = abs(floatval($y) - floatval($current_position_tm['y']));
+//                            if ($delta > 10) {
+//                            $this->collected_text[] = array('text' => '', 'y' => $y);
+//                            end($this->collected_text);
+//                            $y_actual = key($this->collected_text);
+//                                
+//                            }
+//                        }
+                        $this->newLine('', $x, $y,$collected_text);
+                        //$current_position_tm = array('x' => $x, 'y' => $y);
                         $current_position_tm = array('x' => $x, 'y' => $y);
 
                         break;
@@ -351,28 +378,35 @@ class Object
 
                     // set horizontal scaling
                     case 'Tz':
-                        $text = "\n";
-                        $this->addToText($text, 'tm', $current_position_td,$command[self::OPERATOR]);
+                        //$text = "\n";
+                        
+                        $current_position_tm['y'] -= 16;//pieliku uz dullo -16
+                        if($bDebug) echo 'Tx:/new_y='.$current_position_tm['y'].'/add new collect'.PHP_EOL;
+                        $this->newLine('', 0,$current_position_tm['y'],$collected_text);
                         break;
 
                     // move to start of next line
                     case 'T*':
-                        $text = "\n";
-                        $this->addToText($text, 'tm', $current_position_td,$command[self::OPERATOR]);
+                        //$text = "\n";
+                        $current_position_tm['y'] -= 16;//pieliku uz dullo -16
+                        if($bDebug) echo 'Tz:/new_y='.$current_position_tm['y'].'/add new collect'.PHP_EOL;
+                        $this->newLine('',0, $current_position_tm['y'],$collected_text);
                         break;
 
                     case 'Da':
                         break;
 
                     case 'Do':
+                        if($bDebug) echo 'Do:';
                         if (!is_null($page)) {
                             $args = preg_split('/\s/s', $command[self::COMMAND]);
                             $id   = trim(array_pop($args), '/ ');
                             if ($xobject = $page->getXObject($id)) {
-                                $text = $xobject->getText($page);
-                                $this->addToText($text, 'tm', $current_position_tm,$command[self::OPERATOR]);                        
+                                $this->newLine($text, $current_position_tm['x'],$current_position_tm['y'],$collected_text);
+                                if($bDebug) echo $text;
                             }
                         }
+                        if($bDebug) echo PHP_EOL;
                         break;
 
                     case 'rg':
@@ -414,69 +448,50 @@ class Object
             }
         }
         
-        return $this->implodeCollectedText();
+        return $this->implodeCollectedText($collected_text);
 
 
     }
     
-    /**
-     * colect text chunks with cordinates in array
-     * @param string $text  text chunk
-     * @param string $position_type tm or td. Currently do not use
-     * @param array $current_position array('x'=>111,'y'=>222)
-     * @param string $command. Currently do not use
-     * @return boolean
-     */
-    public function addToText($text, $position_type, $current_position, $command) {
+    public function newLine($text,$x, $y,&$collected_text) {
+        while (isset($collected_text[$y]))
+            $y -= 0.001;
 
-        //ignore new line 
-        if ($text == "\n") {
-            return TRUE;
-        }
-
-        if (!$this->collected_text) {
-            //init
-            $this->collected_text = array();
-        } else {
-
-            //if next text chunk in some row add to last collected text
-            end($this->collected_text);
-            $y_prev = key($this->collected_text);
-            $delta = abs($current_position['y'] - floatval($y_prev));
-            if ($delta < 11) {
-                $this->collected_text[$y_prev]['text'] .= $text;
-                return TRUE;
-            }
-        }
-        
-        $y = floatval($current_position['y']);
-        $x = floatval($current_position['x']);
-        
-        //if exist element with actual y value, adjust litle up
-        while (isset($this->collected_text[$y])) {
-            $y += 0.001;
-        }
-        
-        //store chunk in array
-        $this->collected_text[$y] = array('text' => $text, 'x' => $x);
-        return TRUE;
+        $collected_text[$y] = array(
+            'text' => $text, 
+            'x' => $x,
+            'y' => $y,
+                );
     }
 
+    public function appendToLine($text,&$collected_text) {
+        $keys = array_keys($collected_text);
+        $last = end($keys);
+        
+        $collected_text[$last]['text'] .= $text;
+    }
+
+    
     /**
      * process collected 
      * @return string
      */
-    public function implodeCollectedText(){
+    public function implodeCollectedText(&$collected_text){
+        
+        $bDebug = defined('DEBUG_SMALOT_OBJECT') && DEBUG_SMALOT_OBJECT;
+        
         //sort by Y descending
-        krsort($this->collected_text, SORT_NUMERIC);
+        krsort($collected_text, SORT_NUMERIC);
 
+        if($bDebug) var_dump($collected_text);
+        
         //init avlues for loop
         $y_max = FALSE;
         $row = array();
         $out_text = '';
 
-        foreach ($this->collected_text as $y => $xtext) {
-            unset($this->collected_text[$y]);
+        foreach ($collected_text as $y => $xtext) {
+            unset($collected_text[$y]);
             $y = floatval($y);
             if (!$y_max) {
                 /**
@@ -504,7 +519,7 @@ class Object
             }
 
             //actual row output
-            ksort($krow);
+            ksort($krow, SORT_NUMERIC);
             if (!empty($out_text)) {
                 $out_text .= "\n";
             }
@@ -523,7 +538,7 @@ class Object
         }
 
         //last actual row output
-        ksort($krow);
+        ksort($krow, SORT_NUMERIC);
         if (!empty($out_text)) {
             $out_text .= "\r";
         }
