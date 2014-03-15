@@ -246,6 +246,12 @@ class Object
         $current_font        = new Font($this->document);
         $current_position_td = array('x' => false, 'y' => false);
         $current_position_tm = array('x' => false, 'y' => false);
+        
+        //UN
+        $prev_font_size = FALSE;
+        $font_size = FALSE;
+        $y_delta = 0;
+        $font_size_delta = 0;
 
         foreach ($sections as $ks => $section) {
             unset($sections[$ks]);
@@ -254,9 +260,11 @@ class Object
 
             foreach ($commands as $kc => $command) {
                 unset($commands[$kc]);
+                if($bDebug) echo $command[self::OPERATOR].':';
                 switch ($command[self::OPERATOR]) {
                     // set character spacing
                     case 'Tc':
+                        echo 'Command:'.$command[self::COMMAND];
                         break;
 
                     // move text current point
@@ -264,7 +272,7 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        if($bDebug) echo 'Td:/x='.$x.'/y='.$y.PHP_EOL;
+                        if($bDebug) echo '/x='.$x.'/y='.$y;
                         
                         if ((floatval($x) <= 0) ||
                             ($current_position_td['y'] !== false && floatval($y) < floatval($current_position_td['y']))
@@ -278,7 +286,10 @@ class Object
                                 $current_position_td['x']
                             )
                         ) {
-                            // horizontal offset
+                            /**
+                             *  horizontal offset
+                             * nonjemu, jo atseviskjos gadijumos lv burtiem prieksha lika tukshumu
+                             */
                             //$text .= ' ';
                         }
                         $current_position_td = array('x' => $x, 'y' => $y);
@@ -289,11 +300,11 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        if($bDebug) echo 'TD:/x='.$x.'/y='.$y;
+                        if($bDebug) echo '/x='.$x.'/y='.$y;
                         if(empty($collected_text)){
                             $this->newLine('',$x, $y,$collected_text);
                             $current_position_tm = array('x' => $x, 'y' => $y);
-                            if($bDebug) echo '|:added new empty collect'.PHP_EOL;
+                            if($bDebug) echo '|:added new empty collect';
                         }                        
 
                         if (floatval($y) < 0) {
@@ -301,27 +312,29 @@ class Object
                             $current_position_tm['y'] += $y;
                             $current_position_tm['x'] += $x;
                             $this->newLine('', $current_position_tm['x'], $current_position_tm['y'],$collected_text);
-                            if($bDebug) echo '/fixY='.$current_position_tm['y'].'|:added new empty collect'.PHP_EOL;
+                            if($bDebug) echo '/fixY='.$current_position_tm['y'].'|:added new empty collect';
                         } elseif (floatval($x) <= 0) {
                             $this->appendToLine(' ',$collected_text);
-                            if($bDebug) echo '|:horizontal offset'.PHP_EOL;
+                            if($bDebug) echo '|:horizontal offset';
                         }
                         
                         break;
 
                     case 'Tf':
-                        
-                        list($id,) = preg_split('/\s/s', $command[self::COMMAND]);
+                        if($bDebug) echo 'command:'.$command[self::COMMAND];
+                        $prev_font_size = $font_size;
+                        list($id,$font_size) = preg_split('/\s/s', $command[self::COMMAND]);
+                        $font_size_delta = $prev_font_size - $font_size;
                         $id           = trim($id, '/');
+                        
                         $current_font = $page->getFont($id);
-                        if($bDebug) echo 'Tf:fontId='.$id.PHP_EOL;
+                        if($bDebug) echo '/fontId='.$id.'/size='.$font_size;
                         break;
 
                     case "'":
                     case 'Tj':
                         $command[self::COMMAND] = array($command);
                     case 'TJ':
-                        if($bDebug) echo $command[self::OPERATOR];
                         // Skip if not previously defined, should never happened.
                         $text = '';
                         if (is_null($current_font)) {
@@ -331,17 +344,29 @@ class Object
                             continue;
                         }
 
-                        $sub_text = $current_font->decodeText($command[self::COMMAND]);
+
+                        
+                        $text .= $current_font->decodeText($command[self::COMMAND]);
+                        
+                        //identifice prim pantu
+                        if($font_size_delta > 4 
+                                && $font_size_delta < 8 
+                                && $y_delta > 4 
+                                && $y_delta < 8
+                                && trim($text) != ''){
+                                $text = '<sup>'.$text.'</sup>';                            
+                        }
+
                         //$this->collected_text[$y_actual]['text'] .= $text . $sub_text;
-                        $this->appendToLine($text . $sub_text,$collected_text);
-                        if($bDebug) echo ':AddText:'.$text . $sub_text.PHP_EOL;
+                        $this->appendToLine($text ,$collected_text);
+                        if($bDebug) echo '/fd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
 
                         break;
 
                     // set leading
                     case 'TL':
                         //$text = ' ';
-                        if($bDebug) echo 'TL:add space';
+                        if($bDebug) echo 'add space';
                         //$this->collected_text[$y_actual]['text'] .= ' ';
                         $this->appendToLine(' ',$collected_text);
                         break;
@@ -351,7 +376,7 @@ class Object
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
                         $x    = array_pop($args);
-                        if($bDebug) echo 'Tm:/x='.$x.'/y='.$y.PHP_EOL;
+                        if($bDebug) echo '/x='.$x.'/y='.$y;
 //                        $text = FALSE;
 //                        if ($current_position_tm['y'] !== false) {
 //                            $delta = abs(floatval($y) - floatval($current_position_tm['y']));
@@ -362,6 +387,13 @@ class Object
 //                                
 //                            }
 //                        }
+                        $y_delta = $y - $current_position_tm['y'];
+                        ////                        
+                        //identifice prim pantu
+                        if($font_size_delta > 4 && $prev_font_size - $font_size < 8 
+                                && $y_delta > 4 && $y_delta < 8){
+                                break;                          
+                        }                        
                         $this->newLine('', $x, $y,$collected_text);
                         //$current_position_tm = array('x' => $x, 'y' => $y);
                         $current_position_tm = array('x' => $x, 'y' => $y);
@@ -381,7 +413,7 @@ class Object
                         //$text = "\n";
                         
                         $current_position_tm['y'] -= 16;//pieliku uz dullo -16
-                        if($bDebug) echo 'Tx:/new_y='.$current_position_tm['y'].'/add new collect'.PHP_EOL;
+                        if($bDebug) echo '/new_y='.$current_position_tm['y'].'/add new collect';
                         $this->newLine('', 0,$current_position_tm['y'],$collected_text);
                         break;
 
@@ -389,7 +421,7 @@ class Object
                     case 'T*':
                         //$text = "\n";
                         $current_position_tm['y'] -= 16;//pieliku uz dullo -16
-                        if($bDebug) echo 'Tz:/new_y='.$current_position_tm['y'].'/add new collect'.PHP_EOL;
+                        if($bDebug) echo '/new_y='.$current_position_tm['y'].'/add new collect';
                         $this->newLine('',0, $current_position_tm['y'],$collected_text);
                         break;
 
@@ -397,7 +429,6 @@ class Object
                         break;
 
                     case 'Do':
-                        if($bDebug) echo 'Do:';
                         if (!is_null($page)) {
                             $args = preg_split('/\s/s', $command[self::COMMAND]);
                             $id   = trim(array_pop($args), '/ ');
@@ -406,7 +437,6 @@ class Object
                                 if($bDebug) echo $text;
                             }
                         }
-                        if($bDebug) echo PHP_EOL;
                         break;
 
                     case 'rg':
@@ -445,6 +475,7 @@ class Object
 
                     default:
                 }
+                if($bDebug) echo PHP_EOL;
             }
         }
         
