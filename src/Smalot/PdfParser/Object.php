@@ -341,11 +341,12 @@ class Object
                             // Fallback
                             // TODO : Improve
                             $text .= $command[self::COMMAND][0][self::COMMAND];
+                            if($bDebug) echo '/fd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
                             continue;
                         }
 
 
-                        
+                     
                         $text .= $current_font->decodeText($command[self::COMMAND]);
                         
                         //identifice prim pantu
@@ -359,7 +360,7 @@ class Object
 
                         //$this->collected_text[$y_actual]['text'] .= $text . $sub_text;
                         $this->appendToLine($text ,$collected_text);
-                        if($bDebug) echo '/fd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
+                        if($bDebug) echo '/xxfd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
 
                         break;
 
@@ -513,8 +514,6 @@ class Object
         
         //sort by Y descending
         krsort($collected_text, SORT_NUMERIC);
-
-        if($bDebug) var_dump($collected_text);
         
         //init avlues for loop
         $y_max = FALSE;
