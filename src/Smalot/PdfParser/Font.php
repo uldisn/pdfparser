@@ -396,9 +396,12 @@ class Font extends Object
      *
      * @return string
      */
-    protected function decodeContent($text, &$unicode)
-    {
-        if ($this->has('ToUnicode') && $unicode) {
+    protected function decodeContent($text, &$unicode){
+        $l = strlen($text);
+        $b = $this->tableSizes['from'];
+        
+
+        if (($l % $b == 0) && $this->has('ToUnicode')) {
 
             $bytes = $this->tableSizes['from'];
 

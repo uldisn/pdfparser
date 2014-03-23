@@ -264,13 +264,17 @@ class Object
                 switch ($command[self::OPERATOR]) {
                     // set character spacing
                     case 'Tc':
-                        echo 'Command:'.$command[self::COMMAND];
+                        if($bDebug) echo 'Command:'.$command[self::COMMAND];
                         break;
 
                     // move text current point
                     case 'Td':
                         $args = preg_split('/\s/s', $command[self::COMMAND]);
                         $y    = array_pop($args);
+                        if($y>0)
+                            $y = floor(100*$y)/100;
+                        elseif($y<0)
+                            $y = ceil(100*$y)/100;
                         $x    = array_pop($args);
                         if($bDebug) echo '/x='.$x.'/y='.$y;
                         
@@ -279,6 +283,7 @@ class Object
                         ) {
                             // vertical offset
                             //$text .= "\n";
+                            if($bDebug) echo '/LF';
                             $current_position_tm['x'] = 0; 
                             $current_position_tm['y'] -= 11;
                             $this->newLine('', $current_position_tm['x'], $current_position_tm['y'],$collected_text);
@@ -302,15 +307,20 @@ class Object
                         $x    = array_pop($args);
                         if($bDebug) echo '/x='.$x.'/y='.$y;
                         if(empty($collected_text)){
+                            if($bDebug) echo '/LF';
                             $this->newLine('',$x, $y,$collected_text);
                             $current_position_tm = array('x' => $x, 'y' => $y);
                             if($bDebug) echo '|:added new empty collect';
                         }                        
 
+                        if (floatval($y) > 0) {
+                            $y_delta = $y;                            
+                        }
                         if (floatval($y) < 0) {
                             //$text = "\n";
                             $current_position_tm['y'] += $y;
                             $current_position_tm['x'] += $x;
+                            if($bDebug) echo '/LF';
                             $this->newLine('', $current_position_tm['x'], $current_position_tm['y'],$collected_text);
                             if($bDebug) echo '/fixY='.$current_position_tm['y'].'|:added new empty collect';
                         } elseif (floatval($x) <= 0) {
@@ -333,6 +343,7 @@ class Object
 
                     case "'":
                     case 'Tj':
+                        //if($bDebug) echo 'command:'.$command;
                         $command[self::COMMAND] = array($command);
                     case 'TJ':
                         // Skip if not previously defined, should never happened.
@@ -355,12 +366,12 @@ class Object
                                 && $y_delta > 4 
                                 && $y_delta < 8
                                 && trim($text) != ''){
-                                $text = '<sup>'.$text.'</sup>';                            
+                                $text = '<sup>'.trim($text).'</sup>';                            
                         }
 
                         //$this->collected_text[$y_actual]['text'] .= $text . $sub_text;
                         $this->appendToLine($text ,$collected_text);
-                        if($bDebug) echo '/xxfd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
+                        if($bDebug) echo '/fsd:'.$font_size_delta.'/yd:'.$y_delta.'/AddText:'.$text;
 
                         break;
 
@@ -395,6 +406,7 @@ class Object
                                 && $y_delta > 4 && $y_delta < 8){
                                 break;                          
                         }                        
+                        if($bDebug) echo '/LF';
                         $this->newLine('', $x, $y,$collected_text);
                         //$current_position_tm = array('x' => $x, 'y' => $y);
                         $current_position_tm = array('x' => $x, 'y' => $y);
@@ -434,6 +446,7 @@ class Object
                             $args = preg_split('/\s/s', $command[self::COMMAND]);
                             $id   = trim(array_pop($args), '/ ');
                             if ($xobject = $page->getXObject($id)) {
+                                $text = $xobject->getText($page);
                                 $this->newLine($text, $current_position_tm['x'],$current_position_tm['y'],$collected_text);
                                 if($bDebug) echo $text;
                             }
@@ -486,10 +499,10 @@ class Object
     }
     
     public function newLine($text,$x, $y,&$collected_text) {
-        while (isset($collected_text[$y]))
-            $y -= 0.001;
+        while (isset($collected_text[strval($y)]))
+            $y = floatval($y) - 0.001;
 
-        $collected_text[$y] = array(
+        $collected_text[strval($y)] = array(
             'text' => $text, 
             'x' => $x,
             'y' => $y,
@@ -510,6 +523,7 @@ class Object
      */
     public function implodeCollectedText(&$collected_text){
         
+        
         $bDebug = defined('DEBUG_SMALOT_OBJECT') && DEBUG_SMALOT_OBJECT;
         
         //sort by Y descending
@@ -523,6 +537,7 @@ class Object
         foreach ($collected_text as $y => $xtext) {
             unset($collected_text[$y]);
             $y = floatval($y);
+            //echo 'y:'.$y.'/';
             if (!$y_max) {
                 /**
                  * init
@@ -538,16 +553,21 @@ class Object
                 $row[] = $xtext;
                 continue;
             }
-
+            
             /**
              * new row
              */
             //actual row sort by Y
             $krow = array();
             foreach ($row as $xt) {
-                $krow[$xt['x']] = $xt['text'];
+                $x = $xt['x'];
+                if( isset($krow[$x])){
+                    $x ++;
+                }                
+                $krow[$x] = $xt['text'];
             }
-
+            //echo implode('//',$krow).PHP_EOL;
+            //echo implode('//',$krow).PHP_EOL;
             //actual row output
             ksort($krow, SORT_NUMERIC);
             if (!empty($out_text)) {
@@ -560,17 +580,21 @@ class Object
             $row = array();
             $row[] = $xtext;
         }
-
+        var_dump($row);
         //actual row sort by Y
         $krow = array();
         foreach ($row as $xt) {
-            $krow[$xt['x']] = $xt['text'];
+            $x = $xt['x'];
+            if( isset($krow[$x])){
+                $x ++;
+            }
+            $krow[$x] = $xt['text'];
         }
-
+        //echo 'y:'.$y.'/'.implode('//',$krow).PHP_EOL;
         //last actual row output
         ksort($krow, SORT_NUMERIC);
         if (!empty($out_text)) {
-            $out_text .= "\r";
+            $out_text .= "\n";
         }
         $out_text .= implode('', $krow);
         return $out_text;        
