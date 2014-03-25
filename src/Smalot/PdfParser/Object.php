@@ -361,7 +361,7 @@ class Object
                         $text .= $current_font->decodeText($command[self::COMMAND]);
                         
                         //identifice prim pantu
-                        if($font_size_delta > 4 
+                        if($font_size_delta > 3 
                                 && $font_size_delta < 8 
                                 && $y_delta > 4 
                                 && $y_delta < 8
@@ -402,7 +402,8 @@ class Object
                         $y_delta = $y - $current_position_tm['y'];
                         ////                        
                         //identifice prim pantu
-                        if($font_size_delta > 4 && $prev_font_size - $font_size < 8 
+                        //if($bDebug) echo '/fsd:'.$font_size_delta.'/pfs:'.$prev_font_size.'/fs:'.$font_size.'/yd:'.$y_delta;
+                        if($font_size_delta > 3 && $prev_font_size - $font_size < 8 
                                 && $y_delta > 4 && $y_delta < 8){
                                 break;                          
                         }                        
@@ -580,7 +581,7 @@ class Object
             $row = array();
             $row[] = $xtext;
         }
-        var_dump($row);
+        
         //actual row sort by Y
         $krow = array();
         foreach ($row as $xt) {
